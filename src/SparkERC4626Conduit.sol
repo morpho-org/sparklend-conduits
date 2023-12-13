@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.13;
 
-import { IPool } from 'aave-v3-core/contracts/interfaces/IPool.sol';
-
 import { IERC20 }    from 'erc20-helpers/interfaces/IERC20.sol';
 import { SafeERC20 } from 'erc20-helpers/SafeERC20.sol';
 
 import { UpgradeableProxied } from 'upgradeable-proxy/UpgradeableProxied.sol';
 
-import { ISparkLendConduit } from './interfaces/ISparkLendConduit.sol';
+import { ISparkERC4626Conduit } from './interfaces/ISparkERC4626Conduit.sol';
 
 interface RolesLike {
     function canCall(bytes32, address, address, bytes4) external view returns (bool);
@@ -18,7 +16,7 @@ interface RegistryLike {
     function buffers(bytes32 ilk) external view returns (address buffer);
 }
 
-contract SparkERC4626Conduit is UpgradeableProxied, ISparkLendConduit {
+contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
 
     using SafeERC20  for address;
 
@@ -26,6 +24,7 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkLendConduit {
     /*** Storage                                                                                ***/
     /**********************************************************************************************/
 
+    // TODO: replace line below
     address public override immutable pool;
 
     address public override roles;
@@ -58,6 +57,7 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkLendConduit {
     /*** Constructor                                                                            ***/
     /**********************************************************************************************/
 
+    // TODO: replace constructor
     constructor(address _pool) {
         pool = _pool;
     }
@@ -103,6 +103,7 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkLendConduit {
         totalShares[asset] += newShares;
 
         asset.safeTransferFrom(source, address(this), amount);
+        // TODO: replace line below
         IPool(pool).supply(asset, amount, address(this), 0);
 
         emit Deposit(ilk, asset, source, amount);
@@ -127,6 +128,7 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkLendConduit {
 
         require(destination != address(0), "SparkLendConduit/no-buffer-registered");
 
+        // TODO: replace line below
         IPool(pool).withdraw(asset, amount, destination);
 
         emit Withdraw(ilk, asset, destination, amount);
@@ -157,6 +159,7 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkLendConduit {
     }
 
     function getAvailableLiquidity(address asset) public view override returns (uint256) {
+        // TODO: replace line below
         return IERC20(asset).balanceOf(IPool(pool).getReserveData(asset).aTokenAddress);
     }
 
@@ -165,16 +168,19 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkLendConduit {
     /**********************************************************************************************/
 
     function _convertToAssets(address asset, uint256 amount) internal view returns (uint256) {
+        // TODO: replace line below
         return _rayMul(amount, IPool(pool).getReserveNormalizedIncome(asset));
     }
 
     function _convertToShares(address asset, uint256 amount) internal view returns (uint256) {
+        // TODO: replace line below
         return _rayDiv(amount, IPool(pool).getReserveNormalizedIncome(asset));
     }
 
     function _convertToSharesRoundUp(address asset, uint256 amount)
         internal view returns (uint256)
     {
+        // TODO: replace line below
         return _divUp(amount * 1e27, IPool(pool).getReserveNormalizedIncome(asset));
     }
 
