@@ -17,3 +17,6 @@
 [submodule "lib/erc20-helpers"]
 	path = lib/erc20-helpers
 	url = https://github.com/marsfoundation/erc20-helpers
+[submodule "lib/solmate"]
+	path = lib/solmate
+	url = https://github.com/transmissions11/solmate
