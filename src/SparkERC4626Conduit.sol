@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 pragma solidity ^0.8.13;
 
+import { IERC4626 }  from 'forge-std/interfaces/IERC4626.sol';
 import { IERC20 }    from 'erc20-helpers/interfaces/IERC20.sol';
 import { SafeERC20 } from 'erc20-helpers/SafeERC20.sol';
 
@@ -24,11 +25,11 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
     /*** Storage                                                                                ***/
     /**********************************************************************************************/
 
-    // TODO: replace line below
-    address public override immutable pool;
-
     address public override roles;
     address public override registry;
+
+    // TODO: rename and add to interface
+    mapping(address => address) public assetToVault;
 
     mapping(address => bool) public override enabled;
 
@@ -54,15 +55,6 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
     }
 
     /**********************************************************************************************/
-    /*** Constructor                                                                            ***/
-    /**********************************************************************************************/
-
-    // TODO: replace constructor
-    constructor(address _pool) {
-        pool = _pool;
-    }
-
-    /**********************************************************************************************/
     /*** Admin Functions                                                                        ***/
     /**********************************************************************************************/
 
@@ -80,9 +72,23 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
 
     function setAssetEnabled(address asset, bool enabled_) external override auth {
         enabled[asset] = enabled_;
-        asset.safeApprove(pool, enabled_ ? type(uint256).max : 0);
+        asset.safeApprove(assetToVault[asset], enabled_ ? type(uint256).max : 0);
 
         emit SetAssetEnabled(asset, enabled_);
+    }
+
+    // TODO: add to interface
+    // Note: when changing the vault, the asset is disabled by default.
+    // Note: make sure to withdraw all funds before changing the vault.
+    function setVaultAsset(address asset, address vault) external auth {
+        // Disable the asset if the vault is unset
+        // TODO: confirm this is the desired behavior
+        if (assetToVault[asset] != vault) enabled[asset] = false;
+
+        assetToVault[asset] = vault;
+
+        // TODO: add to interface
+        // emit SetVaultAsset(asset, vault);
     }
 
     /**********************************************************************************************/
@@ -103,8 +109,7 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
         totalShares[asset] += newShares;
 
         asset.safeTransferFrom(source, address(this), amount);
-        // TODO: replace line below
-        IPool(pool).supply(asset, amount, address(this), 0);
+        IERC4626(assetToVault[asset]).deposit(amount, address(this));
 
         emit Deposit(ilk, asset, source, amount);
     }
@@ -117,6 +122,7 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
 
         // Convert the amount to withdraw to shares
         // Round up to be conservative but prevent underflow
+        // TODO: replace the logic
         uint256 withdrawalShares
             = _min(shares[asset][ilk], _convertToSharesRoundUp(asset, amount));
 
@@ -128,8 +134,7 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
 
         require(destination != address(0), "SparkERC4626Conduit/no-buffer-registered");
 
-        // TODO: replace line below
-        IPool(pool).withdraw(asset, amount, destination);
+        IERC4626(assetToVault[asset]).withdraw(amount, destination, address(this));
 
         emit Withdraw(ilk, asset, destination, amount);
     }
@@ -139,7 +144,8 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
     /**********************************************************************************************/
 
     function maxDeposit(bytes32, address asset) public view override returns (uint256 maxDeposit_) {
-        // Note: Purposefully ignoring any potential supply cap limits on SparkLend.
+        // TODO: double check the comment below
+        // Note: Purposefully ignoring any potential supply cap limits on the ERC4626.
         //       This is because we assume the supply cap on this asset to be turned off.
         return enabled[asset] ? type(uint256).max : 0;
     }
@@ -160,7 +166,7 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
 
     function getAvailableLiquidity(address asset) public view override returns (uint256) {
         // TODO: replace line below
-        return IERC20(asset).balanceOf(IPool(pool).getReserveData(asset).aTokenAddress);
+        return IERC20(asset).balanceOf(IERC4626(vault).getReserveData(asset).aTokenAddress);
     }
 
     /**********************************************************************************************/
@@ -169,19 +175,19 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
 
     function _convertToAssets(address asset, uint256 amount) internal view returns (uint256) {
         // TODO: replace line below
-        return _rayMul(amount, IPool(pool).getReserveNormalizedIncome(asset));
+        return _rayMul(amount, IERC4626(vault).getReserveNormalizedIncome(asset));
     }
 
     function _convertToShares(address asset, uint256 amount) internal view returns (uint256) {
         // TODO: replace line below
-        return _rayDiv(amount, IPool(pool).getReserveNormalizedIncome(asset));
+        return _rayDiv(amount, IERC4626(vault).getReserveNormalizedIncome(asset));
     }
 
     function _convertToSharesRoundUp(address asset, uint256 amount)
         internal view returns (uint256)
     {
         // TODO: replace line below
-        return _divUp(amount * 1e27, IPool(pool).getReserveNormalizedIncome(asset));
+        return _divUp(amount * 1e27, IERC4626(vault).getReserveNormalizedIncome(asset));
     }
 
     // Please note this function returns 0 instead of reverting when x and y are 0

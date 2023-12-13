@@ -38,13 +38,6 @@ interface ISparkERC4626Conduit is IAllocatorConduit {
     /*** State Variables                                                                        ***/
     /**********************************************************************************************/
 
-    // TODO: replace line below
-    /**
-     *  @notice Returns the pool associated with the SparkLend instance.
-     *  @return The address of the pool.
-     */
-    function pool() external view returns (address);
-
     /**
      *  @notice Returns the roles contract.
      *  @return The address representing the roles.
