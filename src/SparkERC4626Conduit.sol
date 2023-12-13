@@ -41,14 +41,14 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
     /**********************************************************************************************/
 
     modifier auth() {
-        require(wards[msg.sender] == 1, "SparkLendConduit/not-authorized");
+        require(wards[msg.sender] == 1, "SparkERC4626Conduit/not-authorized");
         _;
     }
 
     modifier ilkAuth(bytes32 ilk) {
         require(
             RolesLike(roles).canCall(ilk, msg.sender, address(this), msg.sig),
-            "SparkLendConduit/ilk-not-authorized"
+            "SparkERC4626Conduit/ilk-not-authorized"
         );
         _;
     }
@@ -90,11 +90,11 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
     /**********************************************************************************************/
 
     function deposit(bytes32 ilk, address asset, uint256 amount) external override ilkAuth(ilk) {
-        require(enabled[asset], "SparkLendConduit/asset-disabled");
+        require(enabled[asset], "SparkERC4626Conduit/asset-disabled");
 
         address source = RegistryLike(registry).buffers(ilk);
 
-        require(source != address(0), "SparkLendConduit/no-buffer-registered");
+        require(source != address(0), "SparkERC4626Conduit/no-buffer-registered");
 
         // Convert asset amount to shares
         uint256 newShares = _convertToShares(asset, amount);
@@ -126,7 +126,7 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
 
         address destination = RegistryLike(registry).buffers(ilk);
 
-        require(destination != address(0), "SparkLendConduit/no-buffer-registered");
+        require(destination != address(0), "SparkERC4626Conduit/no-buffer-registered");
 
         // TODO: replace line below
         IPool(pool).withdraw(asset, amount, destination);
