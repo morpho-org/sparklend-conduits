@@ -2,7 +2,6 @@
 pragma solidity ^0.8.13;
 
 import { IERC4626 }  from 'forge-std/interfaces/IERC4626.sol';
-import { IERC20 }    from 'erc20-helpers/interfaces/IERC20.sol';
 import { SafeERC20 } from 'erc20-helpers/SafeERC20.sol';
 
 import { UpgradeableProxied } from 'upgradeable-proxy/UpgradeableProxied.sol';
@@ -28,7 +27,7 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
     address public override roles;
     address public override registry;
 
-    // TODO: rename and add to interface
+    // TODO: renaming?
     mapping(address => address) public assetToVault;
 
     mapping(address => bool) public override enabled;
@@ -83,12 +82,12 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
     function setVaultAsset(address asset, address vault) external auth {
         // Disable the asset if the vault is unset
         // TODO: confirm this is the desired behavior
+        // TODO: can create weird behavior
         if (assetToVault[asset] != vault) enabled[asset] = false;
 
         assetToVault[asset] = vault;
 
-        // TODO: add to interface
-        // emit SetVaultAsset(asset, vault);
+        emit SetVaultAsset(asset, vault);
     }
 
     /**********************************************************************************************/
@@ -121,10 +120,8 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
         amount = _min(maxAmount, maxWithdraw(ilk, asset));
 
         // Convert the amount to withdraw to shares
-        // Round up to be conservative but prevent underflow
-        // TODO: replace the logic
-        uint256 withdrawalShares
-            = _min(shares[asset][ilk], _convertToSharesRoundUp(asset, amount));
+        // TODO: check if we still need to round up
+        uint256 withdrawalShares = _min(shares[asset][ilk], _convertToShares(asset, amount));
 
         // Reduce share accounting by the amount withdrawn
         shares[asset][ilk] -= withdrawalShares;
@@ -144,10 +141,7 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
     /**********************************************************************************************/
 
     function maxDeposit(bytes32, address asset) public view override returns (uint256 maxDeposit_) {
-        // TODO: double check the comment below
-        // Note: Purposefully ignoring any potential supply cap limits on the ERC4626.
-        //       This is because we assume the supply cap on this asset to be turned off.
-        return enabled[asset] ? type(uint256).max : 0;
+        return enabled[asset] ? IERC4626(assetToVault[asset]).maxDeposit() : 0;
     }
 
     function maxWithdraw(bytes32 ilk, address asset)
@@ -165,8 +159,7 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
     }
 
     function getAvailableLiquidity(address asset) public view override returns (uint256) {
-        // TODO: replace line below
-        return IERC20(asset).balanceOf(IERC4626(vault).getReserveData(asset).aTokenAddress);
+        return IERC4626(assetToVault[asset]).maxWithdraw();
     }
 
     /**********************************************************************************************/
@@ -174,39 +167,14 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
     /**********************************************************************************************/
 
     function _convertToAssets(address asset, uint256 amount) internal view returns (uint256) {
-        // TODO: replace line below
-        return _rayMul(amount, IERC4626(vault).getReserveNormalizedIncome(asset));
+        return IERC4626(assetToVault[asset]).convertToAssets(amount);
     }
 
     function _convertToShares(address asset, uint256 amount) internal view returns (uint256) {
-        // TODO: replace line below
-        return _rayDiv(amount, IERC4626(vault).getReserveNormalizedIncome(asset));
-    }
-
-    function _convertToSharesRoundUp(address asset, uint256 amount)
-        internal view returns (uint256)
-    {
-        // TODO: replace line below
-        return _divUp(amount * 1e27, IERC4626(vault).getReserveNormalizedIncome(asset));
-    }
-
-    // Please note this function returns 0 instead of reverting when x and y are 0
-    function _divUp(uint256 x, uint256 y) internal pure returns (uint256 z) {
-        unchecked {
-            z = x != 0 ? ((x - 1) / y) + 1 : 0;
-        }
+        return IERC4626(assetToVault[asset]).convertToShares(amount);
     }
 
     function _min(uint256 a, uint256 b) internal pure returns (uint256) {
         return a < b ? a : b;
     }
-
-    function _rayMul(uint256 x, uint256 y) internal pure returns (uint256 z) {
-        z = x * y / 1e27;
-    }
-
-    function _rayDiv(uint256 x, uint256 y) internal pure returns (uint256 z) {
-        z = x * 1e27 / y;
-    }
-
 }

@@ -15,6 +15,13 @@ interface ISparkERC4626Conduit is IAllocatorConduit {
     /**********************************************************************************************/
 
     /**
+     *  @notice Event emitted when the vault address for a given asset is set.
+     *  @param  asset The address of the asset.
+     *  @param  vault The new vault address.
+     */
+    emit SetVaultAsset(asset, vault);
+
+    /**
      *  @notice Event emitted when roles address is set.
      *  @param  roles The new roles address.
      */
@@ -37,6 +44,12 @@ interface ISparkERC4626Conduit is IAllocatorConduit {
     /**********************************************************************************************/
     /*** State Variables                                                                        ***/
     /**********************************************************************************************/
+
+    /**
+     *  @notice Returns the vault related to the given asset.
+     *  @return The address of the vault.
+     */
+    function assetToVault(address asset) external view returns (address);
 
     /**
      *  @notice Returns the roles contract.
@@ -100,7 +113,7 @@ interface ISparkERC4626Conduit is IAllocatorConduit {
     /**********************************************************************************************/
 
     /**
-     *  @notice Returns the amount of available liquidity in the SparkLend pool for a given asset.
+     *  @notice Returns the amount of available liquidity in the vault for a given asset.
      *  @return The balance of tokens in the asset's reserve's aToken address.
      */
     function getAvailableLiquidity(address asset) external view returns (uint256);
