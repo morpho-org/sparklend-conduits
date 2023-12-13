@@ -70,20 +70,14 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
     }
 
     function setAssetEnabled(address asset, bool enabled_) external override auth {
-        enabled[asset] = enabled_;
-        asset.safeApprove(assetToVault[asset], enabled_ ? type(uint256).max : 0);
-
-        emit SetAssetEnabled(asset, enabled_);
+        _setAssetEnabled(asset, enabled_);
     }
 
-    // TODO: add to interface
-    // Note: when changing the vault, the asset is disabled by default.
-    // Note: make sure to withdraw all funds before changing the vault.
-    function setVaultAsset(address asset, address vault) external auth {
-        // Disable the asset if the vault is unset
-        // TODO: confirm this is the desired behavior
-        // TODO: can create weird behavior
-        if (assetToVault[asset] != vault) enabled[asset] = false;
+    // Note: When changing the vault, the asset is disabled by default.
+    // Note: Make sure to withdraw all funds before changing the vault.
+    function setVaultAsset(address asset, address vault) external override auth {
+        // Disable the asset by default
+        if (assetToVault[asset] != vault) _setAssetEnabled(asset, false);
 
         assetToVault[asset] = vault;
 
@@ -141,7 +135,7 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
     /**********************************************************************************************/
 
     function maxDeposit(bytes32, address asset) public view override returns (uint256 maxDeposit_) {
-        return enabled[asset] ? IERC4626(assetToVault[asset]).maxDeposit() : 0;
+        return enabled[asset] ? IERC4626(assetToVault[asset]).maxDeposit(address(this)) : 0;
     }
 
     function maxWithdraw(bytes32 ilk, address asset)
@@ -159,12 +153,19 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
     }
 
     function getAvailableLiquidity(address asset) public view override returns (uint256) {
-        return IERC4626(assetToVault[asset]).maxWithdraw();
+        return IERC4626(assetToVault[asset]).maxWithdraw(address(this));
     }
 
     /**********************************************************************************************/
     /*** Helper Functions                                                                       ***/
     /**********************************************************************************************/
+
+    function _setAssetEnabled(address asset, bool enabled_) internal {
+        enabled[asset] = enabled_;
+        asset.safeApprove(assetToVault[asset], enabled_ ? type(uint256).max : 0);
+
+        emit SetAssetEnabled(asset, enabled_);
+    }
 
     function _convertToAssets(address asset, uint256 amount) internal view returns (uint256) {
         return IERC4626(assetToVault[asset]).convertToAssets(amount);

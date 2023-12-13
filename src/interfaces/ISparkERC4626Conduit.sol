@@ -19,7 +19,7 @@ interface ISparkERC4626Conduit is IAllocatorConduit {
      *  @param  asset The address of the asset.
      *  @param  vault The new vault address.
      */
-    emit SetVaultAsset(asset, vault);
+    event SetVaultAsset(address asset, address vault);
 
     /**
      *  @notice Event emitted when roles address is set.
@@ -100,6 +100,13 @@ interface ISparkERC4626Conduit is IAllocatorConduit {
      *  @param  _registry The new registry address.
      */
     function setRegistry(address _registry) external;
+
+    /**
+     *  @notice Sets a vault for the given asset.
+     *  @param  asset   The address of the asset.
+     *  @param  vault   The new vault address.
+     */
+    function setVaultAsset(address asset, address vault) external;
 
     /**
      *  @notice Enables or disables an asset.
