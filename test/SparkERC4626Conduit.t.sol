@@ -7,13 +7,12 @@ import { MockERC20 } from 'erc20-helpers/MockERC20.sol';
 
 import { UpgradeableProxy } from 'upgradeable-proxy/UpgradeableProxy.sol';
 
-import { SparkLendConduit } from '../src/SparkLendConduit.sol';
+import { SparkERC4626Conduit } from '../src/SparkERC4626Conduit.sol';
 
-import { SparkLendConduitHarness } from './harnesses/SparkLendConduitHarness.sol';
+import { RolesMock, RegistryMock } from "./mocks/Mocks.sol";
 
-import { PoolMock, RolesMock, RegistryMock } from "./mocks/Mocks.sol";
+import { ERC4626Mock } from 'solmate/test/utils/mocks/ERC4626Mock.sol';
 
-import { ATokenMock } from "./mocks/ATokenMock.sol";
 
 // TODO: Add multiple buffers when multi ilk is used
 
@@ -32,9 +31,9 @@ contract SparkERC4626ConduitTestBase is DssTest {
     RolesMock    roles;
     RegistryMock registry;
     MockERC20    token;
-    ATokenMock   atoken;
+    ERC4626Mock  vault;
 
-    SparkLendConduit conduit;
+    SparkERC4626Conduit conduit;
 
     event Deposit(bytes32 indexed ilk, address indexed asset, address origin, uint256 amount);
     event Withdraw(bytes32 indexed ilk, address indexed asset, address destination, uint256 amount);
@@ -43,27 +42,24 @@ contract SparkERC4626ConduitTestBase is DssTest {
     event SetAssetEnabled(address indexed asset, bool enabled);
 
     function setUp() public virtual {
-        pool     = new PoolMock(vm);
         roles    = new RolesMock();
         registry = new RegistryMock();
 
-        registry.setBuffer(buffer);  // TODO: Update this, make buffer per ilk
+        registry.setBuffer(buffer); // TODO: Update this, make buffer per ilk
 
         token = new MockERC20('Token', 'TKN', 18);
-
-        atoken = pool.atoken();
-
-        atoken.setUnderlying(address(token));
+        vault = new ERC4626Mock(token, 'Vault', 'VAULT');
 
         UpgradeableProxy proxy = new UpgradeableProxy();
-        SparkLendConduit impl  = new SparkLendConduit(address(pool));
+        SparkERC4626Conduit impl  = new SparkERC4626Conduit(address(pool));
 
         proxy.setImplementation(address(impl));
 
-        conduit = SparkLendConduit(address(proxy));
+        conduit = SparkERC4626Conduit(address(proxy));
 
         conduit.setRoles(address(roles));
         conduit.setRegistry(address(registry));
+        conduit.setVaultAsset(address(vault), address(token));
         conduit.setAssetEnabled(address(token), true);
 
         vm.prank(buffer);
@@ -71,61 +67,60 @@ contract SparkERC4626ConduitTestBase is DssTest {
 
         // Set default liquidity index to be greater than 1:1
         // 100 / 125% = 80 shares for 100 asset deposit
-        pool.setLiquidityIndex(125_00 * RBPS);
+        // TODO: update
+        // token.transfer(125_00 * RBPS);
     }
 
-    function _assertATokenState(
-        uint256 scaledBalance,
-        uint256 scaledTotalSupply,
+    function _assertVaultState(
+        uint256 totalAssets,
         uint256 balance,
         uint256 totalSupply
     ) internal {
-        assertEq(atoken.scaledBalanceOf(address(conduit)), scaledBalance);
-        assertEq(atoken.scaledTotalSupply(),               scaledTotalSupply);
-        assertEq(atoken.balanceOf(address(conduit)),       balance);
-        assertEq(atoken.totalSupply(),                     totalSupply);
+        assertEq(vault.totalAssets(),                     totalAssets);
+        assertEq(vault.balanceOf(address(conduit)),       balance);
+        assertEq(vault.totalSupply(),                     totalSupply);
     }
 
-    function _assertTokenState(uint256 bufferBalance, uint256 atokenBalance) internal {
+    function _assertTokenState(uint256 bufferBalance, uint256 vaultBalance) internal {
         assertEq(token.balanceOf(buffer),          bufferBalance);
-        assertEq(token.balanceOf(address(atoken)), atokenBalance);
+        assertEq(token.balanceOf(address(vault)), vaultBalance);
     }
 
 }
 
-contract SparkLendConduitConstructorTests is SparkLendConduitTestBase {
+contract SparkERC4626ConduitConstructorTests is SparkERC4626ConduitTestBase {
 
     function test_constructor() public {
-        assertEq(conduit.pool(),               address(pool));
         assertEq(conduit.wards(address(this)), 1);
     }
 
 }
 
-contract SparkLendConduitModifierTests is SparkLendConduitTestBase {
+contract SparkERC4626ConduitModifierTests is SparkERC4626ConduitTestBase {
 
     function test_authModifiers() public {
         UpgradeableProxy(address(conduit)).deny(address(this));
 
-        checkModifier(address(conduit), "SparkLendConduit/not-authorized", [
-            SparkLendConduit.setRoles.selector,
-            SparkLendConduit.setRegistry.selector,
-            SparkLendConduit.setAssetEnabled.selector
+        checkModifier(address(conduit), "SparkERC4626Conduit/not-authorized", [
+            SparkERC4626Conduit.setRoles.selector,
+            SparkERC4626Conduit.setRegistry.selector,
+            SparkERC4626Conduit.setVaultAsset.selector,
+            SparkERC4626Conduit.setAssetEnabled.selector
         ]);
     }
 
     function test_ilkAuthModifiers() public {
         roles.setCanCall(false);
 
-        checkModifier(address(conduit), "SparkLendConduit/ilk-not-authorized", [
-            SparkLendConduit.deposit.selector,
-            SparkLendConduit.withdraw.selector
+        checkModifier(address(conduit), "SparkERC4626Conduit/ilk-not-authorized", [
+            SparkERC4626Conduit.deposit.selector,
+            SparkERC4626Conduit.withdraw.selector
         ]);
     }
 
 }
 
-contract SparkLendConduitDepositTests is SparkLendConduitTestBase {
+contract SparkERC4626ConduitDepositTests is SparkERC4626ConduitTestBase {
 
     function setUp() public override {
         super.setUp();
@@ -134,19 +129,18 @@ contract SparkLendConduitDepositTests is SparkLendConduitTestBase {
 
     function test_deposit_revert_notEnabled() public {
         conduit.setAssetEnabled(address(token), false);
-        vm.expectRevert("SparkLendConduit/asset-disabled");
+        vm.expectRevert("SparkERC4626Conduit/asset-disabled");
         conduit.deposit(ILK, address(token), 100 ether);
     }
 
     function test_deposit() public {
         _assertTokenState({
             bufferBalance: 100 ether,
-            atokenBalance: 0
+            vaultBalance: 0
         });
 
-        _assertATokenState({
-            scaledBalance:     0,
-            scaledTotalSupply: 0,
+        _assertVaultState({
+            totalAssets:       0,
             balance:           0,
             totalSupply:       0
         });
@@ -160,12 +154,11 @@ contract SparkLendConduitDepositTests is SparkLendConduitTestBase {
 
         _assertTokenState({
             bufferBalance: 0,
-            atokenBalance: 100 ether
+            vaultBalance: 100 ether
         });
 
-        _assertATokenState({
-            scaledBalance:     80 ether,
-            scaledTotalSupply: 80 ether,
+        _assertVaultState({
+            totalAssets:       100 ether,
             balance:           100 ether,
             totalSupply:       100 ether
         });
@@ -177,12 +170,11 @@ contract SparkLendConduitDepositTests is SparkLendConduitTestBase {
     function test_deposit_multiIlk_increasingIndex() public {
         _assertTokenState({
             bufferBalance: 100 ether,
-            atokenBalance: 0
+            vaultBalance: 0
         });
 
-        _assertATokenState({
-            scaledBalance:     0,
-            scaledTotalSupply: 0,
+        _assertVaultState({
+            totalAssets:       0,
             balance:           0,
             totalSupply:       0
         });
@@ -196,12 +188,11 @@ contract SparkLendConduitDepositTests is SparkLendConduitTestBase {
 
         _assertTokenState({
             bufferBalance: 0,
-            atokenBalance: 100 ether
+            vaultBalance: 100 ether
         });
 
-        _assertATokenState({
-            scaledBalance:     80 ether,
-            scaledTotalSupply: 80 ether,
+        _assertVaultState({
+            totalAssets:       100 ether,
             balance:           100 ether,
             totalSupply:       100 ether
         });
@@ -219,10 +210,10 @@ contract SparkLendConduitDepositTests is SparkLendConduitTestBase {
 
         _assertTokenState({
             bufferBalance: 0,
-            atokenBalance: 150 ether
+            vaultBalance: 150 ether
         });
 
-        _assertATokenState({
+        _assertVaultState({
             scaledBalance:     111.25 ether,  // 80 + 31.25
             scaledTotalSupply: 111.25 ether,
             balance:           178 ether,  // 80 * 1.6 + 50 = 178
@@ -236,7 +227,7 @@ contract SparkLendConduitDepositTests is SparkLendConduitTestBase {
 
 }
 
-contract SparkLendConduitWithdrawTests is SparkLendConduitTestBase {
+contract SparkERC4626ConduitWithdrawTests is SparkERC4626ConduitTestBase {
 
     function setUp() public override {
         super.setUp();
@@ -249,12 +240,11 @@ contract SparkLendConduitWithdrawTests is SparkLendConduitTestBase {
     function test_withdraw_sharesRounding() public {
         _assertTokenState({
             bufferBalance: 0,
-            atokenBalance: 100 ether
+            vaultBalance: 100 ether
         });
 
-        _assertATokenState({
-            scaledBalance:     80 ether,
-            scaledTotalSupply: 80 ether,
+        _assertVaultState({
+            totalAssets:       100 ether,
             balance:           100 ether,
             totalSupply:       100 ether
         });
@@ -268,13 +258,12 @@ contract SparkLendConduitWithdrawTests is SparkLendConduitTestBase {
 
         _assertTokenState({
             bufferBalance: 1,
-            atokenBalance: 100 ether - 1
+            vaultBalance: 100 ether - 1
         });
 
-        // NOTE: SparkLend state doesn't have rounding logic, just conduit state.
-        _assertATokenState({
-            scaledBalance:     80 ether,
-            scaledTotalSupply: 80 ether,
+        // NOTE: SparkERC4626 state doesn't have rounding logic, just conduit state.
+        _assertVaultState({
+            totalAssets:       100 ether,
             balance:           100 ether,
             totalSupply:       100 ether
         });
@@ -286,12 +275,11 @@ contract SparkLendConduitWithdrawTests is SparkLendConduitTestBase {
     function test_withdraw_singleIlk_exactPartialWithdraw() public {
         _assertTokenState({
             bufferBalance: 0,
-            atokenBalance: 100 ether
+            vaultBalance: 100 ether
         });
 
-        _assertATokenState({
-            scaledBalance:     80 ether,
-            scaledTotalSupply: 80 ether,
+        _assertVaultState({
+            totalAssets:       100 ether,
             balance:           100 ether,
             totalSupply:       100 ether
         });
@@ -305,10 +293,10 @@ contract SparkLendConduitWithdrawTests is SparkLendConduitTestBase {
 
         _assertTokenState({
             bufferBalance: 40 ether,
-            atokenBalance: 60 ether
+            vaultBalance: 60 ether
         });
 
-        _assertATokenState({
+        _assertVaultState({
             scaledBalance:     48 ether,
             scaledTotalSupply: 48 ether,
             balance:           60 ether,
@@ -322,12 +310,11 @@ contract SparkLendConduitWithdrawTests is SparkLendConduitTestBase {
     function test_withdraw_singleIlk_maxUint() public {
         _assertTokenState({
             bufferBalance: 0,
-            atokenBalance: 100 ether
+            vaultBalance: 100 ether
         });
 
-        _assertATokenState({
-            scaledBalance:     80 ether,
-            scaledTotalSupply: 80 ether,
+        _assertVaultState({
+            totalAssets:       100 ether,
             balance:           100 ether,
             totalSupply:       100 ether
         });
@@ -341,12 +328,11 @@ contract SparkLendConduitWithdrawTests is SparkLendConduitTestBase {
 
         _assertTokenState({
             bufferBalance: 100 ether,
-            atokenBalance: 0
+            vaultBalance: 0
         });
 
-        _assertATokenState({
-            scaledBalance:     0,
-            scaledTotalSupply: 0,
+        _assertVaultState({
+            totalAssets:       0,
             balance:           0,
             totalSupply:       0
         });
@@ -361,10 +347,10 @@ contract SparkLendConduitWithdrawTests is SparkLendConduitTestBase {
 
         _assertTokenState({
             bufferBalance: 0,
-            atokenBalance: 150 ether
+            vaultBalance: 150 ether
         });
 
-        _assertATokenState({
+        _assertVaultState({
             scaledBalance:     120 ether,
             scaledTotalSupply: 120 ether,
             balance:           150 ether,
@@ -381,12 +367,11 @@ contract SparkLendConduitWithdrawTests is SparkLendConduitTestBase {
 
         _assertTokenState({
             bufferBalance: 50 ether,
-            atokenBalance: 100 ether
+            vaultBalance: 100 ether
         });
 
-        _assertATokenState({
-            scaledBalance:     80 ether,
-            scaledTotalSupply: 80 ether,
+        _assertVaultState({
+            totalAssets:       100 ether,
             balance:           100 ether,
             totalSupply:       100 ether
         });
@@ -403,10 +388,10 @@ contract SparkLendConduitWithdrawTests is SparkLendConduitTestBase {
 
         _assertTokenState({
             bufferBalance: 0,
-            atokenBalance: 150 ether
+            vaultBalance: 150 ether
         });
 
-        _assertATokenState({
+        _assertVaultState({
             scaledBalance:     120 ether,
             scaledTotalSupply: 120 ether,
             balance:           150 ether,
@@ -423,10 +408,10 @@ contract SparkLendConduitWithdrawTests is SparkLendConduitTestBase {
 
         _assertTokenState({
             bufferBalance: 100 ether,
-            atokenBalance: 50 ether
+            vaultBalance: 50 ether
         });
 
-        _assertATokenState({
+        _assertVaultState({
             scaledBalance:     40 ether,
             scaledTotalSupply: 40 ether,
             balance:           50 ether,
@@ -439,16 +424,15 @@ contract SparkLendConduitWithdrawTests is SparkLendConduitTestBase {
     }
 
     function test_withdraw_singleIlk_maxUint_partialLiquidity() public {
-        deal(address(token), address(atoken), 40 ether);
+        deal(address(token), address(vault), 40 ether);
 
         _assertTokenState({
             bufferBalance: 0,
-            atokenBalance: 40 ether
+            vaultBalance: 40 ether
         });
 
-        _assertATokenState({
-            scaledBalance:     80 ether,
-            scaledTotalSupply: 80 ether,
+        _assertVaultState({
+            totalAssets:       100 ether,
             balance:           100 ether,
             totalSupply:       100 ether
         });
@@ -462,10 +446,10 @@ contract SparkLendConduitWithdrawTests is SparkLendConduitTestBase {
 
         _assertTokenState({
             bufferBalance: 40 ether,
-            atokenBalance: 0
+            vaultBalance: 0
         });
 
-        _assertATokenState({
+        _assertVaultState({
             scaledBalance:     48 ether,
             scaledTotalSupply: 48 ether,
             balance:           60 ether,
@@ -476,140 +460,139 @@ contract SparkLendConduitWithdrawTests is SparkLendConduitTestBase {
         assertEq(conduit.totalShares(address(token)), 48 ether);
     }
 
-    function test_withdraw_multiIlk_increasingIndex() public {
-        token.mint(buffer, 50 ether);
-        conduit.deposit(ILK2, address(token), 50 ether);
+    // function test_withdraw_multiIlk_increasingIndex() public {
+    //     token.mint(buffer, 50 ether);
+    //     conduit.deposit(ILK2, address(token), 50 ether);
 
-        _assertTokenState({
-            bufferBalance: 0,
-            atokenBalance: 150 ether
-        });
+    //     _assertTokenState({
+    //         bufferBalance: 0,
+    //         vaultBalance: 150 ether
+    //     });
 
-        _assertATokenState({
-            scaledBalance:     120 ether,
-            scaledTotalSupply: 120 ether,
-            balance:           150 ether,
-            totalSupply:       150 ether
-        });
+    //     _assertVaultState({
+    //         scaledBalance:     120 ether,
+    //         scaledTotalSupply: 120 ether,
+    //         balance:           150 ether,
+    //         totalSupply:       150 ether
+    //     });
 
-        assertEq(conduit.shares(address(token), ILK),  80 ether);
-        assertEq(conduit.shares(address(token), ILK2), 40 ether);
-        assertEq(conduit.totalShares(address(token)),  120 ether);
+    //     assertEq(conduit.shares(address(token), ILK),  80 ether);
+    //     assertEq(conduit.shares(address(token), ILK2), 40 ether);
+    //     assertEq(conduit.totalShares(address(token)),  120 ether);
 
-        // type(uint256).max yields the same underlying funds because of same index
-        vm.expectEmit();
-        emit Withdraw(ILK, address(token), buffer, 100 ether);
-        assertEq(conduit.withdraw(ILK, address(token), type(uint256).max), 100 ether);
+    //     // type(uint256).max yields the same underlying funds because of same index
+    //     vm.expectEmit();
+    //     emit Withdraw(ILK, address(token), buffer, 100 ether);
+    //     assertEq(conduit.withdraw(ILK, address(token), type(uint256).max), 100 ether);
 
-        _assertTokenState({
-            bufferBalance: 100 ether,
-            atokenBalance: 50 ether
-        });
+    //     _assertTokenState({
+    //         bufferBalance: 100 ether,
+    //         vaultBalance: 50 ether
+    //     });
 
-        _assertATokenState({
-            scaledBalance:     40 ether,
-            scaledTotalSupply: 40 ether,
-            balance:           50 ether,
-            totalSupply:       50 ether
-        });
+    //     _assertVaultState({
+    //         scaledBalance:     40 ether,
+    //         scaledTotalSupply: 40 ether,
+    //         balance:           50 ether,
+    //         totalSupply:       50 ether
+    //     });
 
-        assertEq(conduit.shares(address(token), ILK),  0);
-        assertEq(conduit.shares(address(token), ILK2), 40 ether);
-        assertEq(conduit.totalShares(address(token)),  40 ether);
+    //     assertEq(conduit.shares(address(token), ILK),  0);
+    //     assertEq(conduit.shares(address(token), ILK2), 40 ether);
+    //     assertEq(conduit.totalShares(address(token)),  40 ether);
 
-        // This mimics interest being earned in the pool. However since the liquidity hasn't
-        // changed, ilk2 will not be able to withdraw the full amount of funds they are entitled to.
-        // This means that they will instead just burn less shares in order to get their initial
-        // deposit back.
-        pool.setLiquidityIndex(160_00 * RBPS);  // 100 / 160% = 62.5 shares for 100 asset deposit
+    //     // This mimics interest being earned in the pool. However since the liquidity hasn't
+    //     // changed, ilk2 will not be able to withdraw the full amount of funds they are entitled to.
+    //     // This means that they will instead just burn less shares in order to get their initial
+    //     // deposit back.
+    //     pool.setLiquidityIndex(160_00 * RBPS);  // 100 / 160% = 62.5 shares for 100 asset deposit
 
-        assertEq(conduit.withdraw(ILK2, address(token), type(uint256).max), 50 ether);
+    //     assertEq(conduit.withdraw(ILK2, address(token), type(uint256).max), 50 ether);
 
-        _assertTokenState({
-            bufferBalance: 150 ether,
-            atokenBalance: 0
-        });
+    //     _assertTokenState({
+    //         bufferBalance: 150 ether,
+    //         vaultBalance: 0
+    //     });
 
-        _assertATokenState({
-            scaledBalance:     8.75 ether,  // 40 - (50 / 1.6) = 8.75
-            scaledTotalSupply: 8.75 ether,
-            balance:           14 ether,    // Interest earned by ilk2
-            totalSupply:       14 ether
-        });
+    //     _assertVaultState({
+    //         scaledBalance:     8.75 ether,  // 40 - (50 / 1.6) = 8.75
+    //         scaledTotalSupply: 8.75 ether,
+    //         balance:           14 ether,    // Interest earned by ilk2
+    //         totalSupply:       14 ether
+    //     });
 
-        assertEq(conduit.shares(address(token), ILK),  0);
-        assertEq(conduit.shares(address(token), ILK2), 8.75 ether);
-        assertEq(conduit.totalShares(address(token)),  8.75 ether);
-    }
+    //     assertEq(conduit.shares(address(token), ILK),  0);
+    //     assertEq(conduit.shares(address(token), ILK2), 8.75 ether);
+    //     assertEq(conduit.totalShares(address(token)),  8.75 ether);
+    // }
 
-    function test_withdraw_multiIlk_decreasingIndex() public {
-        token.mint(buffer, 50 ether);
-        conduit.deposit(ILK2, address(token), 50 ether);
+    // function test_withdraw_multiIlk_decreasingIndex() public {
+    //     token.mint(buffer, 50 ether);
+    //     conduit.deposit(ILK2, address(token), 50 ether);
 
-        _assertTokenState({
-            bufferBalance: 0,
-            atokenBalance: 150 ether
-        });
+    //     _assertTokenState({
+    //         bufferBalance: 0,
+    //         vaultBalance: 150 ether
+    //     });
 
-        _assertATokenState({
-            scaledBalance:     120 ether,
-            scaledTotalSupply: 120 ether,
-            balance:           150 ether,
-            totalSupply:       150 ether
-        });
+    //     _assertVaultState({
+    //         scaledBalance:     120 ether,
+    //         scaledTotalSupply: 120 ether,
+    //         balance:           150 ether,
+    //         totalSupply:       150 ether
+    //     });
 
-        assertEq(conduit.shares(address(token), ILK),  80 ether);
-        assertEq(conduit.shares(address(token), ILK2), 40 ether);
-        assertEq(conduit.totalShares(address(token)),  120 ether);
+    //     assertEq(conduit.shares(address(token), ILK),  80 ether);
+    //     assertEq(conduit.shares(address(token), ILK2), 40 ether);
+    //     assertEq(conduit.totalShares(address(token)),  120 ether);
 
-        // type(uint256).max yields the same underlying funds because of same index
-        vm.expectEmit();
-        emit Withdraw(ILK, address(token), buffer, 100 ether);
-        assertEq(conduit.withdraw(ILK, address(token), type(uint256).max), 100 ether);
+    //     // type(uint256).max yields the same underlying funds because of same index
+    //     vm.expectEmit();
+    //     emit Withdraw(ILK, address(token), buffer, 100 ether);
+    //     assertEq(conduit.withdraw(ILK, address(token), type(uint256).max), 100 ether);
 
-        _assertTokenState({
-            bufferBalance: 100 ether,
-            atokenBalance: 50 ether
-        });
+    //     _assertTokenState({
+    //         bufferBalance: 100 ether,
+    //         vaultBalance: 50 ether
+    //     });
 
-        _assertATokenState({
-            scaledBalance:     40 ether,
-            scaledTotalSupply: 40 ether,
-            balance:           50 ether,
-            totalSupply:       50 ether
-        });
+    //     _assertVaultState({
+    //         scaledBalance:     40 ether,
+    //         scaledTotalSupply: 40 ether,
+    //         balance:           50 ether,
+    //         totalSupply:       50 ether
+    //     });
 
-        assertEq(conduit.shares(address(token), ILK),  0);
-        assertEq(conduit.shares(address(token), ILK2), 40 ether);
-        assertEq(conduit.totalShares(address(token)),  40 ether);
+    //     assertEq(conduit.shares(address(token), ILK),  0);
+    //     assertEq(conduit.shares(address(token), ILK2), 40 ether);
+    //     assertEq(conduit.totalShares(address(token)),  40 ether);
 
-        // This mimics a loss in the pool. Since the liquidity hasn't changed, this means that the
-        // 40 shares that ilk2 has will not be able to withdraw the full amount of funds they
-        // originally deposited.
-        pool.setLiquidityIndex(80_00 * RBPS);  // 100 / 80% = 125 shares for 100 asset deposit
+    //     // This mimics a loss in the pool. Since the liquidity hasn't changed, this means that the
+    //     // 40 shares that ilk2 has will not be able to withdraw the full amount of funds they
+    //     // originally deposited.
+    //     pool.setLiquidityIndex(80_00 * RBPS);  // 100 / 80% = 125 shares for 100 asset deposit
 
-        assertEq(conduit.withdraw(ILK2, address(token), type(uint256).max), 32 ether);
+    //     assertEq(conduit.withdraw(ILK2, address(token), type(uint256).max), 32 ether);
 
-        _assertTokenState({
-            bufferBalance: 132 ether,
-            atokenBalance: 18 ether
-        });
+    //     _assertTokenState({
+    //         bufferBalance: 132 ether,
+    //         vaultBalance: 18 ether
+    //     });
 
-        _assertATokenState({
-            scaledBalance:     0,
-            scaledTotalSupply: 0,
-            balance:           0,
-            totalSupply:       0
-        });
+    //     _assertVaultState({
+    //         totalAssets:       0,
+    //         balance:           0,
+    //         totalSupply:       0
+    //     });
 
-        assertEq(conduit.shares(address(token), ILK),  0);
-        assertEq(conduit.shares(address(token), ILK2), 0);
-        assertEq(conduit.totalShares(address(token)),  0);
-    }
+    //     assertEq(conduit.shares(address(token), ILK),  0);
+    //     assertEq(conduit.shares(address(token), ILK2), 0);
+    //     assertEq(conduit.totalShares(address(token)),  0);
+    // }
 
 }
 
-contract SparkLendConduitMaxViewFunctionTests is SparkLendConduitTestBase {
+contract SparkERC4626ConduitMaxViewFunctionTests is SparkERC4626ConduitTestBase {
 
     function test_maxDeposit() public {
         assertEq(conduit.maxDeposit(ILK, address(token)), type(uint256).max);
@@ -627,14 +610,14 @@ contract SparkLendConduitMaxViewFunctionTests is SparkLendConduitTestBase {
 
         assertEq(conduit.maxWithdraw(ILK, address(token)), 100 ether);
 
-        deal(address(token), address(atoken), 40 ether);
+        deal(address(token), address(vault), 40 ether);
 
         assertEq(conduit.maxWithdraw(ILK, address(token)), 40 ether);
     }
 
 }
 
-contract SparkLendConduitGetTotalDepositsTests is SparkLendConduitTestBase {
+contract SparkERC4626ConduitGetTotalDepositsTests is SparkERC4626ConduitTestBase {
 
     function test_getTotalDeposits() external {
         token.mint(buffer, 100 ether);
@@ -648,34 +631,34 @@ contract SparkLendConduitGetTotalDepositsTests is SparkLendConduitTestBase {
         assertEq(conduit.getTotalDeposits(address(token)), 128 ether);
     }
 
-    function testFuzz_getTotalDeposits(
-        uint256 index1,
-        uint256 index2,
-        uint256 depositAmount
-    )
-        external
-    {
-        index1        = bound(index1,        1 * RBPS, 500_00 * RBPS);
-        index2        = bound(index2,        1 * RBPS, 500_00 * RBPS);
-        depositAmount = bound(depositAmount, 0,        1e32);
+    // function testFuzz_getTotalDeposits(
+    //     uint256 index1,
+    //     uint256 index2,
+    //     uint256 depositAmount
+    // )
+    //     external
+    // {
+    //     index1        = bound(index1,        1 * RBPS, 500_00 * RBPS);
+    //     index2        = bound(index2,        1 * RBPS, 500_00 * RBPS);
+    //     depositAmount = bound(depositAmount, 0,        1e32);
 
-        pool.setLiquidityIndex(index1);
+    //     pool.setLiquidityIndex(index1);
 
-        token.mint(buffer, depositAmount);
-        conduit.deposit(ILK, address(token), depositAmount);
+    //     token.mint(buffer, depositAmount);
+    //     conduit.deposit(ILK, address(token), depositAmount);
 
-        assertApproxEqAbs(conduit.getTotalDeposits(address(token)), depositAmount, 10);
+    //     assertApproxEqAbs(conduit.getTotalDeposits(address(token)), depositAmount, 10);
 
-        pool.setLiquidityIndex(index2);
+    //     pool.setLiquidityIndex(index2);
 
-        uint256 expectedDeposit = depositAmount * 1e27 / index1 * index2 / 1e27;
+    //     uint256 expectedDeposit = depositAmount * 1e27 / index1 * index2 / 1e27;
 
-        assertApproxEqAbs(conduit.getTotalDeposits(address(token)), expectedDeposit, 10);
-    }
+    //     assertApproxEqAbs(conduit.getTotalDeposits(address(token)), expectedDeposit, 10);
+    // }
 
 }
 
-contract SparkLendConduitGetDepositsTests is SparkLendConduitTestBase {
+contract SparkERC4626ConduitGetDepositsTests is SparkERC4626ConduitTestBase {
 
     function test_getDeposits() external {
         token.mint(buffer, 100 ether);
@@ -716,12 +699,12 @@ contract SparkLendConduitGetDepositsTests is SparkLendConduitTestBase {
 
 }
 
-contract SparkLendConduitGetAvailableLiquidityTests is SparkLendConduitTestBase {
+contract SparkERC4626ConduitGetAvailableLiquidityTests is SparkERC4626ConduitTestBase {
 
     function test_getAvailableLiquidity() external {
         assertEq(conduit.getAvailableLiquidity(address(token)), 0);
 
-        deal(address(token), address(atoken), 100 ether);
+        deal(address(token), address(vault), 100 ether);
 
         assertEq(conduit.getAvailableLiquidity(address(token)), 100 ether);
     }
@@ -729,14 +712,14 @@ contract SparkLendConduitGetAvailableLiquidityTests is SparkLendConduitTestBase 
     function testFuzz_getAvailableLiquidity(uint256 dealAmount) external {
         assertEq(conduit.getAvailableLiquidity(address(token)), 0);
 
-        deal(address(token), address(atoken), dealAmount);
+        deal(address(token), address(vault), dealAmount);
 
         assertEq(conduit.getAvailableLiquidity(address(token)), dealAmount);
     }
 
 }
 
-contract SparkLendConduitAdminSetterTests is SparkLendConduitTestBase {
+contract SparkERC4626ConduitAdminSetterTests is SparkERC4626ConduitTestBase {
 
     address SET_ADDRESS = makeAddr("set-address");
 
@@ -783,57 +766,6 @@ contract SparkLendConduitAdminSetterTests is SparkLendConduitTestBase {
         assertEq(conduit.enabled(address(token)), false);
 
         assertEq(token.allowance(address(conduit), address(pool)), 0);
-    }
-
-}
-
-contract SparkLendConduitHarnessDivUpTests is SparkLendConduitTestBase {
-
-    SparkLendConduitHarness conduitHarness;
-
-    function setUp() public override {
-        super.setUp();
-
-        SparkLendConduitHarness impl = new SparkLendConduitHarness(address(pool));
-
-        UpgradeableProxy(address(conduit)).setImplementation(address(impl));
-
-        conduitHarness = SparkLendConduitHarness(address(conduit));
-    }
-
-    function test_divUp() public {
-        // Divide by zero
-        vm.expectRevert(stdError.divisionError);
-        conduitHarness.divUp(1, 0);
-
-        // Small numbers
-        assertEq(conduitHarness.divUp(0, 1), 0);
-        assertEq(conduitHarness.divUp(1, 1), 1);
-        assertEq(conduitHarness.divUp(2, 1), 2);
-        assertEq(conduitHarness.divUp(3, 1), 3);
-        assertEq(conduitHarness.divUp(4, 1), 4);
-
-        assertEq(conduitHarness.divUp(0, 2), 0);
-        assertEq(conduitHarness.divUp(1, 2), 1);
-        assertEq(conduitHarness.divUp(2, 2), 1);
-        assertEq(conduitHarness.divUp(3, 2), 2);
-        assertEq(conduitHarness.divUp(4, 2), 2);
-
-        assertEq(conduitHarness.divUp(0, 3), 0);
-        assertEq(conduitHarness.divUp(1, 3), 1);
-        assertEq(conduitHarness.divUp(2, 3), 1);
-        assertEq(conduitHarness.divUp(3, 3), 1);
-        assertEq(conduitHarness.divUp(4, 3), 2);
-        assertEq(conduitHarness.divUp(5, 3), 2);
-        assertEq(conduitHarness.divUp(6, 3), 2);
-
-        // Large numbers
-        assertEq(conduitHarness.divUp(0, 1e27), 0);
-        assertEq(conduitHarness.divUp(1, 1e27), 1);
-
-        assertEq(conduitHarness.divUp(1e27,     1e27 + 1), 1);
-        assertEq(conduitHarness.divUp(1e27 + 1, 1e27 + 1), 1);
-        assertEq(conduitHarness.divUp(1e27 + 1, 1e27),     2);
     }
 
 }
