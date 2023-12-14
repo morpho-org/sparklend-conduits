@@ -17,11 +17,6 @@ import { MockERC4626, ERC20 } from 'solmate/test/utils/mocks/MockERC4626.sol';
 // TODO: Add multiple buffers when multi ilk is used
 
 contract SparkERC4626ConduitTestBase is DssTest {
-
-    uint256 constant RBPS             = RAY / 10_000;
-    uint256 constant WBPS             = WAD / 10_000;
-    uint256 constant SECONDS_PER_YEAR = 365 days;
-
     bytes32 constant ILK  = 'some-ilk';
     bytes32 constant ILK2 = 'some-ilk2';
 
@@ -38,6 +33,7 @@ contract SparkERC4626ConduitTestBase is DssTest {
     event Withdraw(bytes32 indexed ilk, address indexed asset, address destination, uint256 amount);
     event SetRoles(address roles);
     event SetRegistry(address registry);
+    event SetVaultAsset(address asset, address vault);
     event SetAssetEnabled(address indexed asset, bool enabled);
 
     function setUp() public virtual {
@@ -730,4 +726,27 @@ contract SparkERC4626ConduitAdminSetterTests is SparkERC4626ConduitTestBase {
         assertEq(token.allowance(address(conduit), address(vault)), 0);
     }
 
+    function test_setVaultAsset() public {
+        MockERC20 token2 = new MockERC20('Token', 'TKN', 18);
+
+        assertEq(conduit.assetToVault(address(token2)), address(0));
+        assertFalse(conduit.enabled(address(token2)));
+
+        vm.expectEmit();
+        emit SetVaultAsset(address(token2), address(vault));
+        conduit.setVaultAsset(address(token2), address(vault));
+
+        assertEq(conduit.assetToVault(address(token2)), address(vault));
+        assertFalse(conduit.enabled(address(token2)));
+    }
+
+    function test_setNewVault(address newVault) public {
+        vm.expectEmit();
+        emit SetAssetEnabled(address(token), false);
+        emit SetVaultAsset(address(token), address(0x1));
+        conduit.setVaultAsset(address(token), address(0x1));
+
+        assertEq(conduit.assetToVault(address(token)), address(0x1));
+        assertFalse(conduit.enabled(address(token)));
+    }
 }
