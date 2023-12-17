@@ -15,13 +15,6 @@ interface ISparkERC4626Conduit is IAllocatorConduit {
     /**********************************************************************************************/
 
     /**
-     *  @notice Event emitted when the vault address for a given asset is set.
-     *  @param  asset The address of the asset.
-     *  @param  vault The new vault address.
-     */
-    event SetVaultAsset(address asset, address vault);
-
-    /**
      *  @notice Event emitted when roles address is set.
      *  @param  roles The new roles address.
      */
@@ -40,6 +33,13 @@ interface ISparkERC4626Conduit is IAllocatorConduit {
      *  @param  enabled The new status of the asset.
      */
     event SetAssetEnabled(address indexed asset, bool enabled);
+
+    /**
+     *  @notice Event emitted when the vault address for a given asset is set.
+     *  @param  asset The address of the asset.
+     *  @param  vault The new vault address.
+     */
+    event SetVaultAsset(address asset, address vault);
 
     /**********************************************************************************************/
     /*** State Variables                                                                        ***/
