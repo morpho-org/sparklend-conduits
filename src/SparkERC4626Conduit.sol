@@ -114,7 +114,6 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
         amount = _min(maxAmount, maxWithdraw(ilk, asset));
 
         // Convert the amount to withdraw to shares
-        // TODO: check if we still need to round up
         uint256 withdrawalShares = _min(shares[asset][ilk], _convertToShares(asset, amount));
 
         // Reduce share accounting by the amount withdrawn
