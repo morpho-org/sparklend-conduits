@@ -740,13 +740,20 @@ contract SparkERC4626ConduitAdminSetterTests is SparkERC4626ConduitTestBase {
         assertFalse(conduit.enabled(address(token2)));
     }
 
-    function test_setNewVault(address newVault) public {
+    function testFuzz_setVaultAssett(address newVault) public {
+        vm.assume(newVault != address(vault));
+
         vm.expectEmit();
         emit SetAssetEnabled(address(token), false);
-        emit SetVaultAsset(address(token), address(0x1));
-        conduit.setVaultAsset(address(token), address(0x1));
+        emit SetVaultAsset(address(token), newVault);
+        conduit.setVaultAsset(address(token), newVault);
 
-        assertEq(conduit.assetToVault(address(token)), address(0x1));
+        assertEq(conduit.assetToVault(address(token)), newVault);
         assertFalse(conduit.enabled(address(token)));
+    }
+
+    function test_setVaultAssetAlreadySet() public {
+        vm.expectRevert("SparkERC4626Conduit/vault-already-set");
+        conduit.setVaultAsset(address(token), address(vault));
     }
 }
