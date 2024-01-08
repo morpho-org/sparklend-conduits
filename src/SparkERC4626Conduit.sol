@@ -73,8 +73,7 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
         _setAssetEnabled(asset, enabled_);
     }
 
-    // Note: When changing the vault, the asset is disabled by default.
-    // Note: Make sure to withdraw all funds before changing the vault.
+    /// @notice Note: When changing the vault, the asset is disabled by default. Make sure to withdraw all funds before changing the vault.
     function setVaultAsset(address asset, address vault) external override auth {
         // Disable the asset by default
         if (assetToVault[asset] != vault) _setAssetEnabled(asset, false);
