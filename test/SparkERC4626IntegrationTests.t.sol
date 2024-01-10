@@ -519,7 +519,7 @@ contract SparkLendConduitWithdrawIntegrationTests is SparkLendConduitIntegration
         _assertDaiState({
             buffer1Balance: amountWithdrawn1,
             buffer2Balance: amountWithdrawn2,
-            vaultBalance: INIT_MORPHO_BALANCE + combinedDeposits - amountWithdrawn1 - amountWithdrawn2 + expectedIlk2Value
+            vaultBalance: INIT_MORPHO_BALANCE + combinedDeposits + expectedIlk2Value - amountWithdrawn1 - amountWithdrawn2
         });
 
         expectedSupplyBalance = MorphoBalancesLib.expectedSupplyAssets(morpho, marketParams, address(vault));
