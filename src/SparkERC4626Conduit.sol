@@ -113,18 +113,15 @@ contract SparkERC4626Conduit is UpgradeableProxied, ISparkERC4626Conduit {
         // Constrain the amount that can be withdrawn by the max amount
         amount = _min(maxAmount, maxWithdraw(ilk, asset));
 
-        // Convert the amount to withdraw to shares
-        uint256 withdrawalShares = _min(shares[asset][ilk], _convertToShares(asset, amount));
-
-        // Reduce share accounting by the amount withdrawn
-        shares[asset][ilk] -= withdrawalShares;
-        totalShares[asset] -= withdrawalShares;
-
         address destination = RegistryLike(registry).buffers(ilk);
 
         require(destination != address(0), "SparkERC4626Conduit/no-buffer-registered");
 
-        IERC4626(assetToVault[asset]).withdraw(amount, destination, address(this));
+        uint256 withdrawalShares = IERC4626(assetToVault[asset]).withdraw(amount, destination, address(this));
+
+        // Reduce share accounting by the amount withdrawn
+        shares[asset][ilk] -= withdrawalShares;
+        totalShares[asset] -= withdrawalShares;
 
         emit Withdraw(ilk, asset, destination, amount);
     }
