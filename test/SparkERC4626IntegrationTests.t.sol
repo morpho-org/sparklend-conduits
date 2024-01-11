@@ -16,8 +16,6 @@ import {IMorpho, Id, MarketParams} from "lib/metamorpho/lib/morpho-blue/src/inte
 import {IMetaMorpho} from "lib/metamorpho/src/interfaces/IMetaMorpho.sol";
 import {IMetaMorphoFactory} from "lib/metamorpho/src/interfaces/IMetaMorphoFactory.sol";
 
-// import {MarketParams} from "lib/metamorpho/src/MetaMorpho.sol";
-
 import {UpgradeableProxy} from "upgradeable-proxy/UpgradeableProxy.sol";
 
 import {SparkERC4626Conduit} from "../src/SparkERC4626Conduit.sol";
@@ -141,10 +139,9 @@ contract SparkLendConduitIntegrationTestBase is DssTest {
         assertEq(conduit.totalShares(DAI), conduit.shares(DAI, ILK1) + conduit.shares(DAI, ILK2), "Invariant A");
 
         // NOTE: 1 error because 2 ilks, rounding error scales with number of ilks
-        assertApproxEqAbs(
+        assertEq(
             conduit.getTotalDeposits(DAI),
             conduit.getDeposits(DAI, ILK1) + conduit.getDeposits(DAI, ILK2),
-            1,
             "Invariant B"
         );
 
@@ -156,7 +153,6 @@ contract SparkLendConduitIntegrationTestBase is DssTest {
             2,
             "Invariant D"
         );
-        // or assertApproxEqAbs(conduit.getTotalDeposits(DAI), IERC20(DAI).balanceOf(address(vault)), 2, "Invariant D");
     }
 
     function _assertVaultState(uint256 totalAssets, uint256 balance, uint256 totalSupply) internal {
@@ -178,9 +174,6 @@ contract SparkLendConduitIntegrationTestBase is DssTest {
     function _assertConduitState(uint256 ilk1Shares, uint256 totalShares) internal {
         assertEq(conduit.shares(DAI, ILK1), ilk1Shares, "ilk1Shares");
         assertEq(conduit.totalShares(DAI), totalShares, "totalShares");
-
-        // assertApproxEqAbs(conduit.shares(DAI, ILK1), ilk1Shares, 1, "ilk1Shares");
-        // assertApproxEqAbs(conduit.totalShares(DAI), totalShares, 1, "totalShares");
     }
 
     function _assertConduitState(uint256 ilk1Shares, uint256 ilk2Shares, uint256 totalShares) internal {
@@ -408,7 +401,7 @@ contract SparkLendConduitWithdrawIntegrationTests is SparkLendConduitIntegration
         uint256 amountWithdrawn = conduit.withdraw(ILK1, DAI, expectedSupplyBalance);
 
         // Slightly less funds received than withdrawn, causing dust of 2 in accounting
-        assertApproxEqAbs(amountWithdrawn, expectedSupplyBalance, 2);
+        assertApproxEqAbs(amountWithdrawn, expectedSupplyBalance, 1);
         assertLe(amountWithdrawn, expectedSupplyBalance);
 
         _assertInvariants();
