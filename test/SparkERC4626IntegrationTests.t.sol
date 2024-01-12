@@ -400,7 +400,7 @@ contract SparkLendConduitWithdrawIntegrationTests is SparkLendConduitIntegration
         vm.prank(operator1);
         uint256 amountWithdrawn = conduit.withdraw(ILK1, DAI, expectedSupplyBalance);
 
-        // Slightly less funds received than withdrawn, causing dust of 2 in accounting
+        // Slightly less funds received than withdrawn, causing dust of 1 in accounting, because of the utilization of assets (and not shares) to withdraw max.
         assertApproxEqAbs(amountWithdrawn, expectedSupplyBalance, 1);
         assertLe(amountWithdrawn, expectedSupplyBalance);
 
@@ -469,7 +469,7 @@ contract SparkLendConduitWithdrawIntegrationTests is SparkLendConduitIntegration
         vm.prank(operator1);
         uint256 amountWithdrawn1 = conduit.withdraw(ILK1, DAI, expectedIlk1Value);
 
-        // Slightly less funds received than withdrawn, causing dust of 1 in accounting
+        // Slightly less funds received than withdrawn, causing dust of 1 in accounting, because of the utilization of assets (and not shares) to withdraw max.
         assertApproxEqAbs(amountWithdrawn1, expectedIlk1Value, 1);
         assertLe(amountWithdrawn1, expectedIlk1Value);
 
@@ -503,7 +503,7 @@ contract SparkLendConduitWithdrawIntegrationTests is SparkLendConduitIntegration
         vm.prank(operator2);
         uint256 amountWithdrawn2 = conduit.withdraw(ILK2, DAI, expectedIlk2Value);
 
-        // Slightly less funds received than withdrawn, causing dust of 1 in accounting
+        // Slightly less funds received than withdrawn, causing dust of 1 in accounting, because of the utilization of assets (and not shares) to withdraw max.
         assertApproxEqAbs(amountWithdrawn2, expectedIlk2Value, 1);
         assertLe(amountWithdrawn2, expectedIlk2Value);
 
